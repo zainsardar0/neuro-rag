@@ -226,7 +226,6 @@ pytest tests/ -v
 ## 👤 Author
 
 **Muhammad Zain Ul Abideen**  
-Student at GIKI (Ghulam Ishaq Khan Institute)
 
 [![GitHub](https://img.shields.io/badge/GitHub-zainsardar0-black?logo=github)](https://github.com/zainsardar0)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Muhammad%20Zain-blue?logo=linkedin)](https://www.linkedin.com/in/muhammad-zain-ul-abideen-1705032b3/)
