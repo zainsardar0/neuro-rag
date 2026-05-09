@@ -118,7 +118,7 @@ if page == "🔍 Query":
             if result:
                 st.divider()
 
-                # V2: Query Rewriting — show what was actually searched
+                # V2 Phase 1: Query Rewriting
                 rewritten = result.get("rewritten_query", "").strip()
                 if rewritten and rewritten != query.strip():
                     with st.expander("🔁 Query Rewriting (V2)", expanded=True):
@@ -136,16 +136,36 @@ if page == "🔍 Query":
 
                 st.divider()
 
-                # Sources
+                # Sources — V2 Phase 2: show both cosine and rerank scores
                 if result["sources"]:
                     st.subheader("📚 Sources")
                     for i, source in enumerate(result["sources"], 1):
+                        rerank_score = source.get("rerank_score", None)
+                        cosine_score = source.get("score", 0)
+
                         with st.expander(
-                            f"Source {i} — {source['file']} | Page {source['page']} | Score: {source['score']}"
+                            f"Source {i} — {source['file']} | "
+                            f"Page {source['page']} | "
+                            f"Rerank: {rerank_score} | "
+                            f"Cosine: {cosine_score}"
                         ):
                             st.write(f"**File:** {source['file']}")
                             st.write(f"**Page:** {source['page']}")
-                            st.write(f"**Relevance Score:** {source['score']}")
+
+                            # V2: Show both scores side by side
+                            score_col1, score_col2 = st.columns(2)
+                            with score_col1:
+                                st.metric(
+                                    "Rerank Score",
+                                    rerank_score if rerank_score is not None else "N/A",
+                                    help="CrossEncoder relevance score (0-1). Higher = more relevant."
+                                )
+                            with score_col2:
+                                st.metric(
+                                    "Cosine Score",
+                                    cosine_score,
+                                    help="Vector similarity score from ChromaDB (0-1)."
+                                )
                 else:
                     st.info("No sources found — fallback response used.")
 
@@ -268,9 +288,10 @@ elif page == "📊 System Info":
 
         # V2 features
         st.subheader("🚀 V2 Features")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         col1.success("✅ Phase 1: Query Rewriting")
-        col2.info("🔜 Phase 2: Reranking")
+        col2.success("✅ Phase 2: Reranking")
+        col3.info("🔜 Phase 3: Hybrid Search")
 
         st.divider()
 

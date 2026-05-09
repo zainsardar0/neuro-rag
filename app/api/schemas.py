@@ -10,13 +10,14 @@ class SourceSchema(BaseModel):
     """Schema for a single source citation."""
     file: str
     page: int
-    score: float
+    score: float                # Cosine similarity score from ChromaDB
+    rerank_score: float         # V2: CrossEncoder reranking score
 
 
 class QueryResponse(BaseModel):
     """Response schema for the /query endpoint."""
     query: str
-    rewritten_query: str        # V2: Query Rewriting
+    rewritten_query: str        # V2 Phase 1: Query Rewriting
     answer: str
     sources: list[SourceSchema]
     model: str

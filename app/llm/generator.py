@@ -39,7 +39,7 @@ class Generator:
 
         Args:
             query: User's question
-            chunks: Retrieved chunks from Phase 6
+            chunks: Retrieved chunks with cosine score and rerank_score
 
         Returns:
             Dict with 'answer', 'sources', and 'model' keys
@@ -65,6 +65,7 @@ class Generator:
             answer = response.content
 
             # Extract unique sources from chunks
+            # V2: include rerank_score alongside cosine score
             sources = []
             seen = set()
             for chunk in chunks:
@@ -74,7 +75,8 @@ class Generator:
                     sources.append({
                         "file": chunk["source"],
                         "page": chunk["page"],
-                        "score": chunk["score"]
+                        "score": chunk["score"],
+                        "rerank_score": chunk.get("rerank_score", chunk["score"])  # V2
                     })
 
             app_logger.info("Answer generated successfully")
@@ -94,7 +96,6 @@ class Generator:
     def generate_with_fallback(self, query: str, chunks: list[dict]) -> dict:
         """
         Generate answer with automatic fallback if no chunks provided.
-        Designed for LangGraph integration in Phase 8.
 
         Args:
             query: User's question

@@ -1,43 +1,57 @@
 from app.embedding.embedder import Embedder
 from app.retrieval.vector_store import VectorStore
+from app.retrieval.reranker import Reranker
 from app.core.logger import app_logger
 from app.core.exceptions import RetrievalError
 
 # Minimum similarity score to consider a chunk relevant
 SIMILARITY_THRESHOLD = 0.3
 
+# V2: Fetch more candidates for reranker to work with
+RETRIEVAL_TOP_K = 10
+
 
 class Retriever:
     """
     Handles retrieval of relevant document chunks
     for a given user query.
+    V2: Added reranking step after initial retrieval.
     """
 
     def __init__(self, top_k: int = 5):
         """
-        Initialize retriever with embedder and vector store.
+        Initialize retriever with embedder, vector store and reranker.
 
         Args:
-            top_k: Number of chunks to retrieve per query
+            top_k: Number of final chunks to return after reranking
         """
         try:
             self.top_k = top_k
             self.embedder = Embedder()
             self.vector_store = VectorStore()
+            self.reranker = Reranker()              # V2: NEW
             app_logger.info(f"Retriever initialized with top_k={top_k}")
         except Exception as e:
             raise RetrievalError(f"Failed to initialize retriever: {str(e)}")
 
     def retrieve(self, query: str) -> list[dict]:
         """
-        Retrieve most relevant chunks for a query.
+        Retrieve and rerank most relevant chunks for a query.
+
+        V2 Flow:
+            1. Embed query
+            2. Fetch top 10 from ChromaDB (wider candidate pool)
+            3. Filter by similarity threshold
+            4. Rerank with CrossEncoder
+            5. Return top 5 reranked chunks
 
         Args:
-            query: User's question string
+            query: User's question string (rewritten query in V2)
 
         Returns:
-            List of dicts with 'text', 'page', 'source', 'score' keys
-            Sorted by relevance score descending
+            List of dicts with 'text', 'page', 'source',
+            'score', 'rerank_score' keys
+            Sorted by rerank_score descending
 
         Raises:
             RetrievalError: If retrieval fails
@@ -51,10 +65,10 @@ class Retriever:
             # Step 1 — Embed the query
             query_embedding = self.embedder.embed_query(query)
 
-            # Step 2 — Query ChromaDB
+            # Step 2 — Query ChromaDB with wider candidate pool
             results = self.vector_store.query(
                 query_embedding=query_embedding,
-                top_k=self.top_k
+                top_k=RETRIEVAL_TOP_K           # V2: fetch 10 instead of 5
             )
 
             # Step 3 — Filter by similarity threshold
@@ -72,14 +86,19 @@ class Retriever:
                 f"(filtered from {len(results)})"
             )
 
+            # Step 4 — Rerank with CrossEncoder
+            reranked = self.reranker.rerank(query, filtered)   # V2: NEW
+
             # Log top result for debugging
             app_logger.debug(
-                f"Top result — Score: {filtered[0]['score']} | "
-                f"Source: {filtered[0]['source']} | "
-                f"Page: {filtered[0]['page']}"
+                f"Top result after reranking — "
+                f"Rerank Score: {reranked[0]['rerank_score']} | "
+                f"Cosine Score: {reranked[0]['score']} | "
+                f"Source: {reranked[0]['source']} | "
+                f"Page: {reranked[0]['page']}"
             )
 
-            return filtered
+            return reranked
 
         except RetrievalError:
             raise
@@ -88,7 +107,7 @@ class Retriever:
 
     def retrieve_with_fallback(self, query: str) -> tuple[list[dict], bool]:
         """
-        Retrieve chunks with fallback flag for LangGraph.
+        Retrieve and rerank chunks with fallback flag for LangGraph.
         Returns results and a boolean indicating if fallback is needed.
 
         Args:

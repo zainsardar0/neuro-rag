@@ -8,13 +8,13 @@ class RAGState(TypedDict):
     """
 
     # Input
-    query: str                  # Original user query (never modified)
+    query: str                      # Original user query (never modified)
 
-    # V2: Query Rewriting
-    rewritten_query: str        # LLM-optimized query for retrieval
+    # V2 Phase 1: Query Rewriting
+    rewritten_query: str            # LLM-optimized query for retrieval
 
     # Retrieval
-    retrieved_chunks: list[dict]
+    retrieved_chunks: list[dict]    # V2: chunks now include rerank_score
     needs_fallback: bool
 
     # Generation
