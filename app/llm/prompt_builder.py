@@ -65,3 +65,45 @@ upload documents containing information about this topic.
 Keep your response brief and helpful."""
 
     return prompt
+
+
+def build_rewrite_prompt(query: str) -> str:
+    """
+    Build a prompt to rewrite a user query for better vector retrieval.
+
+    The goal is to expand vague or conversational queries into
+    keyword-rich, semantically dense queries suitable for embedding search.
+
+    Args:
+        query: Original user query
+
+    Returns:
+        Prompt string for the rewriter LLM
+    """
+    prompt = f"""You are a query optimization expert for a scientific research retrieval system.
+
+Your task: Rewrite the user's query to maximize retrieval quality from a vector database 
+containing academic research papers.
+
+REWRITING RULES:
+1. Expand abbreviations and vague terms into specific technical language
+2. Add relevant domain-specific keywords and synonyms
+3. Keep the core intent of the original query intact
+4. Output ONLY the rewritten query — no explanation, no preamble, no quotes
+5. Length: 1-2 sentences maximum
+
+EXAMPLES:
+Original: "what does the paper say about memory?"
+Rewritten: memory consolidation mechanisms working memory neural networks cognitive processes
+
+Original: "how does attention work?"
+Rewritten: attention mechanism self-attention transformer architecture neural network focus
+
+Original: "side effects of the drug"
+Rewritten: adverse effects pharmacological side effects drug toxicity clinical outcomes
+
+Now rewrite this query:
+Original: "{query}"
+Rewritten:"""
+
+    return prompt

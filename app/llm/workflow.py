@@ -2,6 +2,7 @@ from langgraph.graph import StateGraph, END
 from app.core.state import RAGState
 from app.retrieval.retriever import Retriever
 from app.llm.generator import Generator
+from app.llm.query_rewriter import QueryRewriter      # V2: NEW
 from app.core.logger import app_logger
 
 # Constants
@@ -13,13 +14,15 @@ class RAGWorkflow:
     """
     LangGraph-based RAG workflow with decision making,
     retry logic and validation.
+    V2: Added query rewriting node between analyze and retrieve.
     """
 
     def __init__(self):
-        """Initialize workflow with retriever and generator."""
+        """Initialize workflow with retriever, generator, and rewriter."""
         app_logger.info("Initializing RAG Workflow...")
         self.retriever = Retriever(top_k=5)
         self.generator = Generator()
+        self.rewriter = QueryRewriter()               # V2: NEW
         self.graph = self._build_graph()
         app_logger.info("RAG Workflow ready")
 
@@ -33,7 +36,6 @@ class RAGWorkflow:
         query = state["query"].strip()
         app_logger.info(f"Analyzing query: {query[:50]}...")
 
-        # Basic validation
         if len(query) < 5:
             app_logger.warning("Query too short — routing to fallback")
             state["needs_fallback"] = True
@@ -46,15 +48,31 @@ class RAGWorkflow:
         state["is_valid"] = False
         return state
 
+    def rewrite_query(self, state: RAGState) -> RAGState:   # V2: NEW NODE
+        """
+        Node 2: Rewrite the query for better vector retrieval.
+        Always falls back to original query on failure.
+        """
+        rewritten = self.rewriter.rewrite(state["query"])
+        state["rewritten_query"] = rewritten
+        app_logger.info(
+            f"Query rewrite | Original: '{state['query'][:50]}' "
+            f"| Rewritten: '{rewritten[:50]}'"
+        )
+        return state
+
     def retrieve_documents(self, state: RAGState) -> RAGState:
         """
-        Node 2: Retrieve relevant chunks from ChromaDB.
-        Sets needs_fallback if no relevant docs found.
+        Node 3: Retrieve relevant chunks from ChromaDB.
+        V2: Uses rewritten_query instead of original query.
         """
         app_logger.info("Retrieving relevant documents...")
 
+        # V2: use rewritten_query for retrieval
+        retrieval_query = state.get("rewritten_query") or state["query"]
+
         results, needs_fallback = self.retriever.retrieve_with_fallback(
-            state["query"]
+            retrieval_query
         )
 
         state["retrieved_chunks"] = results
@@ -69,12 +87,13 @@ class RAGWorkflow:
 
     def generate_answer(self, state: RAGState) -> RAGState:
         """
-        Node 3: Generate answer using LLM with retrieved context.
+        Node 4: Generate answer using LLM with retrieved context.
+        Uses original query so the answer addresses what user actually asked.
         """
         app_logger.info("Generating answer...")
 
         result = self.generator.generate_with_fallback(
-            query=state["query"],
+            query=state["query"],       # original query for generation
             chunks=state["retrieved_chunks"]
         )
 
@@ -85,13 +104,11 @@ class RAGWorkflow:
 
     def validate_answer(self, state: RAGState) -> RAGState:
         """
-        Node 4: Validate the generated answer quality.
-        Checks length and basic quality signals.
+        Node 5: Validate the generated answer quality.
         """
         answer = state["answer"]
         app_logger.info("Validating answer quality...")
 
-        # Quality checks
         is_long_enough = len(answer) >= MIN_ANSWER_LENGTH
         is_not_empty = bool(answer.strip())
         not_error_response = "cannot find" not in answer.lower() or len(answer) > 200
@@ -110,7 +127,7 @@ class RAGWorkflow:
 
     def fallback_response(self, state: RAGState) -> RAGState:
         """
-        Node 5: Handle cases where no relevant documents found.
+        Node 6: Handle cases where no relevant documents found.
         """
         app_logger.warning("Executing fallback response")
 
@@ -127,10 +144,12 @@ class RAGWorkflow:
 
     def prepare_final_response(self, state: RAGState) -> RAGState:
         """
-        Node 6: Package the final response.
+        Node 7: Package the final response.
+        V2: Includes rewritten_query in metadata.
         """
         state["final_response"] = {
             "query": state["query"],
+            "rewritten_query": state.get("rewritten_query", ""),  # V2: NEW
             "answer": state["answer"],
             "sources": state["sources"],
             "model": state["model"],
@@ -146,7 +165,7 @@ class RAGWorkflow:
         """Route after query analysis."""
         if state["needs_fallback"]:
             return "fallback"
-        return "retrieve"
+        return "rewrite"                              # V2: was "retrieve"
 
     def route_after_retrieval(self, state: RAGState) -> str:
         """Route after retrieval based on results."""
@@ -155,10 +174,7 @@ class RAGWorkflow:
         return "generate"
 
     def route_after_validation(self, state: RAGState) -> str:
-        """
-        Route after validation.
-        Retry if answer is poor quality and retries remain.
-        """
+        """Route after validation with retry logic."""
         if state["is_valid"]:
             return "finalize"
 
@@ -179,6 +195,7 @@ class RAGWorkflow:
 
         # Add nodes
         graph.add_node("analyze", self.analyze_query)
+        graph.add_node("rewrite", self.rewrite_query)     # V2: NEW
         graph.add_node("retrieve", self.retrieve_documents)
         graph.add_node("generate", self.generate_answer)
         graph.add_node("validate", self.validate_answer)
@@ -188,12 +205,14 @@ class RAGWorkflow:
         # Set entry point
         graph.set_entry_point("analyze")
 
-        # Add edges
+        # Edges
         graph.add_conditional_edges(
             "analyze",
             self.route_after_analysis,
-            {"retrieve": "retrieve", "fallback": "fallback"}
+            {"rewrite": "rewrite", "fallback": "fallback"}  # V2: updated
         )
+
+        graph.add_edge("rewrite", "retrieve")              # V2: NEW
 
         graph.add_conditional_edges(
             "retrieve",
@@ -231,6 +250,7 @@ class RAGWorkflow:
 
         initial_state: RAGState = {
             "query": query,
+            "rewritten_query": "",                    # V2: NEW
             "retrieved_chunks": [],
             "needs_fallback": False,
             "answer": "",

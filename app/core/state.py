@@ -8,7 +8,10 @@ class RAGState(TypedDict):
     """
 
     # Input
-    query: str
+    query: str                  # Original user query (never modified)
+
+    # V2: Query Rewriting
+    rewritten_query: str        # LLM-optimized query for retrieval
 
     # Retrieval
     retrieved_chunks: list[dict]

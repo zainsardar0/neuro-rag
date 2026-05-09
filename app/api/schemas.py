@@ -16,6 +16,7 @@ class SourceSchema(BaseModel):
 class QueryResponse(BaseModel):
     """Response schema for the /query endpoint."""
     query: str
+    rewritten_query: str        # V2: Query Rewriting
     answer: str
     sources: list[SourceSchema]
     model: str

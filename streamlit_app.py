@@ -118,6 +118,18 @@ if page == "🔍 Query":
             if result:
                 st.divider()
 
+                # V2: Query Rewriting — show what was actually searched
+                rewritten = result.get("rewritten_query", "").strip()
+                if rewritten and rewritten != query.strip():
+                    with st.expander("🔁 Query Rewriting (V2)", expanded=True):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**Original Query**")
+                            st.info(query.strip())
+                        with col2:
+                            st.markdown("**Rewritten for Retrieval**")
+                            st.success(rewritten)
+
                 # Answer
                 st.subheader("📝 Answer")
                 st.markdown(result["answer"])
@@ -176,13 +188,11 @@ elif page == "📄 Upload Documents":
     )
 
     if uploaded_file:
-        # Show file info
         file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
         col1, col2 = st.columns(2)
         col1.metric("File Name", uploaded_file.name)
         col2.metric("File Size", f"{file_size_mb:.2f} MB")
 
-        # Size validation
         if file_size_mb > 10:
             st.error("File too large. Maximum size is 10MB.")
         else:
@@ -256,11 +266,19 @@ elif page == "📊 System Info":
 
         st.divider()
 
+        # V2 features
+        st.subheader("🚀 V2 Features")
+        col1, col2 = st.columns(2)
+        col1.success("✅ Phase 1: Query Rewriting")
+        col2.info("🔜 Phase 2: Reranking")
+
+        st.divider()
+
         # About
         st.subheader("👤 About")
         st.markdown("""
         **NeuroRAG — AI Research Assistant**  
-        Built by **Muhammad Zain Ul Abideen** 
+        Built by **Muhammad Zain Ul Abideen**
 
         [![GitHub](https://img.shields.io/badge/GitHub-zainsardar0-black?logo=github)](https://github.com/zainsardar0)
         [![LinkedIn](https://img.shields.io/badge/LinkedIn-Muhammad%20Zain-blue?logo=linkedin)](https://www.linkedin.com/in/muhammad-zain-ul-abideen-1705032b3/)
