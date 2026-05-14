@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, END
 from app.core.state import RAGState
 from app.retrieval.retriever import Retriever
 from app.llm.generator import Generator
-from app.llm.query_rewriter import QueryRewriter      # V2: NEW
+from app.llm.query_rewriter import QueryRewriter
 from app.core.logger import app_logger
 
 # Constants
@@ -14,7 +14,9 @@ class RAGWorkflow:
     """
     LangGraph-based RAG workflow with decision making,
     retry logic and validation.
-    V2: Added query rewriting node between analyze and retrieve.
+    V2 Phase 1: Query Rewriting
+    V2 Phase 2: Reranking
+    V2 Phase 3: Hybrid Search
     """
 
     def __init__(self):
@@ -22,7 +24,7 @@ class RAGWorkflow:
         app_logger.info("Initializing RAG Workflow...")
         self.retriever = Retriever(top_k=5)
         self.generator = Generator()
-        self.rewriter = QueryRewriter()               # V2: NEW
+        self.rewriter = QueryRewriter()
         self.graph = self._build_graph()
         app_logger.info("RAG Workflow ready")
 
@@ -46,9 +48,10 @@ class RAGWorkflow:
 
         state["retry_count"] = 0
         state["is_valid"] = False
+        state["retrieval_method"] = ""          # V2 Phase 3: initialize
         return state
 
-    def rewrite_query(self, state: RAGState) -> RAGState:   # V2: NEW NODE
+    def rewrite_query(self, state: RAGState) -> RAGState:
         """
         Node 2: Rewrite the query for better vector retrieval.
         Always falls back to original query on failure.
@@ -63,12 +66,11 @@ class RAGWorkflow:
 
     def retrieve_documents(self, state: RAGState) -> RAGState:
         """
-        Node 3: Retrieve relevant chunks from ChromaDB.
-        V2: Uses rewritten_query instead of original query.
+        Node 3: Hybrid retrieval — BM25 + semantic + RRF + reranking.
+        V2 Phase 3: Uses hybrid search instead of semantic only.
         """
-        app_logger.info("Retrieving relevant documents...")
+        app_logger.info("Retrieving relevant documents (hybrid)...")
 
-        # V2: use rewritten_query for retrieval
         retrieval_query = state.get("rewritten_query") or state["query"]
 
         results, needs_fallback = self.retriever.retrieve_with_fallback(
@@ -78,10 +80,16 @@ class RAGWorkflow:
         state["retrieved_chunks"] = results
         state["needs_fallback"] = needs_fallback
 
-        if needs_fallback:
-            app_logger.warning("No relevant documents found — will use fallback")
+        # V2 Phase 3: capture retrieval method from first chunk
+        if results:
+            state["retrieval_method"] = results[0].get("retrieval_method", "hybrid")
         else:
-            app_logger.info(f"Retrieved {len(results)} relevant chunks")
+            state["retrieval_method"] = "none"
+            app_logger.warning("No relevant documents found — will use fallback")
+
+        app_logger.info(
+            f"Retrieved {len(results)} chunks via {state['retrieval_method']}"
+        )
 
         return state
 
@@ -93,7 +101,7 @@ class RAGWorkflow:
         app_logger.info("Generating answer...")
 
         result = self.generator.generate_with_fallback(
-            query=state["query"],       # original query for generation
+            query=state["query"],
             chunks=state["retrieved_chunks"]
         )
 
@@ -145,16 +153,17 @@ class RAGWorkflow:
     def prepare_final_response(self, state: RAGState) -> RAGState:
         """
         Node 7: Package the final response.
-        V2: Includes rewritten_query in metadata.
+        V2 Phase 3: Includes retrieval_method in metadata.
         """
         state["final_response"] = {
             "query": state["query"],
-            "rewritten_query": state.get("rewritten_query", ""),  # V2: NEW
+            "rewritten_query": state.get("rewritten_query", ""),
             "answer": state["answer"],
             "sources": state["sources"],
             "model": state["model"],
             "used_fallback": state["needs_fallback"],
-            "retry_count": state["retry_count"]
+            "retry_count": state["retry_count"],
+            "retrieval_method": state.get("retrieval_method", "hybrid")  # V2 Phase 3
         }
         app_logger.info("Final response prepared")
         return state
@@ -165,7 +174,7 @@ class RAGWorkflow:
         """Route after query analysis."""
         if state["needs_fallback"]:
             return "fallback"
-        return "rewrite"                              # V2: was "retrieve"
+        return "rewrite"
 
     def route_after_retrieval(self, state: RAGState) -> str:
         """Route after retrieval based on results."""
@@ -180,7 +189,9 @@ class RAGWorkflow:
 
         state["retry_count"] += 1
         if state["retry_count"] <= MAX_RETRIES:
-            app_logger.info(f"Retrying generation ({state['retry_count']}/{MAX_RETRIES})")
+            app_logger.info(
+                f"Retrying generation ({state['retry_count']}/{MAX_RETRIES})"
+            )
             return "generate"
 
         app_logger.warning("Max retries reached — finalizing anyway")
@@ -195,7 +206,7 @@ class RAGWorkflow:
 
         # Add nodes
         graph.add_node("analyze", self.analyze_query)
-        graph.add_node("rewrite", self.rewrite_query)     # V2: NEW
+        graph.add_node("rewrite", self.rewrite_query)
         graph.add_node("retrieve", self.retrieve_documents)
         graph.add_node("generate", self.generate_answer)
         graph.add_node("validate", self.validate_answer)
@@ -209,10 +220,10 @@ class RAGWorkflow:
         graph.add_conditional_edges(
             "analyze",
             self.route_after_analysis,
-            {"rewrite": "rewrite", "fallback": "fallback"}  # V2: updated
+            {"rewrite": "rewrite", "fallback": "fallback"}
         )
 
-        graph.add_edge("rewrite", "retrieve")              # V2: NEW
+        graph.add_edge("rewrite", "retrieve")
 
         graph.add_conditional_edges(
             "retrieve",
@@ -250,9 +261,10 @@ class RAGWorkflow:
 
         initial_state: RAGState = {
             "query": query,
-            "rewritten_query": "",                    # V2: NEW
+            "rewritten_query": "",
             "retrieved_chunks": [],
             "needs_fallback": False,
+            "retrieval_method": "",             # V2 Phase 3
             "answer": "",
             "sources": [],
             "model": "",

@@ -116,6 +116,42 @@ class VectorStore:
         except Exception as e:
             raise VectorStoreError(f"Failed to query ChromaDB: {str(e)}")
 
+    def get_all_chunks(self) -> list[dict]:
+        """
+        Fetch all chunks from ChromaDB for BM25 index building.
+        V3: Phase 3 Hybrid Search — BM25 needs all texts to build index.
+
+        Returns:
+            List of dicts with 'text', 'page', 'source' keys
+            Empty list if collection is empty
+        """
+        try:
+            count = self.collection.count()
+            if count == 0:
+                app_logger.warning("ChromaDB is empty — BM25 index will be empty")
+                return []
+
+            results = self.collection.get(
+                include=["documents", "metadatas"]
+            )
+
+            chunks = []
+            for doc, metadata in zip(
+                results["documents"],
+                results["metadatas"]
+            ):
+                chunks.append({
+                    "text": doc,
+                    "page": metadata["page"],
+                    "source": metadata["source"]
+                })
+
+            app_logger.info(f"Fetched {len(chunks)} chunks for BM25 indexing")
+            return chunks
+
+        except Exception as e:
+            raise VectorStoreError(f"Failed to fetch all chunks: {str(e)}")
+
     def count(self) -> int:
         """Return total number of chunks stored in ChromaDB."""
         return self.collection.count()

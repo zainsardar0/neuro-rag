@@ -14,8 +14,11 @@ class RAGState(TypedDict):
     rewritten_query: str            # LLM-optimized query for retrieval
 
     # Retrieval
-    retrieved_chunks: list[dict]    # V2: chunks now include rerank_score
+    retrieved_chunks: list[dict]    # V2: chunks include rerank_score, rrf_score
     needs_fallback: bool
+
+    # V2 Phase 3: Hybrid Search
+    retrieval_method: str           # "hybrid", "semantic", or "bm25"
 
     # Generation
     answer: str

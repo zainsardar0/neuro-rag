@@ -60,7 +60,6 @@ with st.sidebar:
     st.caption("AI Research Assistant")
     st.divider()
 
-    # Check API status
     health = api_health()
     if health:
         st.success("🟢 API Connected")
@@ -83,7 +82,6 @@ if page == "🔍 Query":
     st.title("🔍 Ask a Research Question")
     st.caption("Query your ingested research documents with AI-powered answers and citations.")
 
-    # Show ingested docs
     docs = api_documents()
     if docs and docs["documents"]:
         st.info(f"📚 Currently querying: {', '.join(docs['documents'])}")
@@ -92,7 +90,6 @@ if page == "🔍 Query":
 
     st.divider()
 
-    # Query input
     query = st.text_area(
         "Your Question",
         placeholder="e.g. What is the attention mechanism in transformers?",
@@ -130,13 +127,25 @@ if page == "🔍 Query":
                             st.markdown("**Rewritten for Retrieval**")
                             st.success(rewritten)
 
+                # V2 Phase 3: Retrieval method badge
+                retrieval_method = result.get("retrieval_method", "hybrid")
+                method_labels = {
+                    "hybrid": "🔀 Hybrid Search (BM25 + Semantic)",
+                    "semantic": "🧠 Semantic Search only",
+                    "bm25": "🔑 BM25 Keyword Search only",
+                    "none": "⚠️ No retrieval method"
+                }
+                st.caption(
+                    f"Retrieval: {method_labels.get(retrieval_method, retrieval_method)}"
+                )
+
                 # Answer
                 st.subheader("📝 Answer")
                 st.markdown(result["answer"])
 
                 st.divider()
 
-                # Sources — V2 Phase 2: show both cosine and rerank scores
+                # Sources
                 if result["sources"]:
                     st.subheader("📚 Sources")
                     for i, source in enumerate(result["sources"], 1):
@@ -152,13 +161,12 @@ if page == "🔍 Query":
                             st.write(f"**File:** {source['file']}")
                             st.write(f"**Page:** {source['page']}")
 
-                            # V2: Show both scores side by side
                             score_col1, score_col2 = st.columns(2)
                             with score_col1:
                                 st.metric(
                                     "Rerank Score",
                                     rerank_score if rerank_score is not None else "N/A",
-                                    help="CrossEncoder relevance score (0-1). Higher = more relevant."
+                                    help="CrossEncoder relevance score (0-1)."
                                 )
                             with score_col2:
                                 st.metric(
@@ -171,10 +179,11 @@ if page == "🔍 Query":
 
                 # Metadata
                 st.divider()
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Model", result["model"].split("-")[0] + "...")
                 col2.metric("Used Fallback", "Yes" if result["used_fallback"] else "No")
                 col3.metric("Retries", result["retry_count"])
+                col4.metric("Retrieval", retrieval_method.upper())
             else:
                 st.error("Failed to get response. Check if API is running.")
 
@@ -184,7 +193,6 @@ elif page == "📄 Upload Documents":
     st.title("📄 Upload Research Documents")
     st.caption("Upload PDF files to add them to the knowledge base.")
 
-    # Current documents
     st.subheader("📚 Currently Ingested Documents")
     docs = api_documents()
     if docs and docs["documents"]:
@@ -198,7 +206,6 @@ elif page == "📄 Upload Documents":
 
     st.divider()
 
-    # Upload section
     st.subheader("➕ Add New Document")
 
     uploaded_file = st.file_uploader(
@@ -242,7 +249,6 @@ elif page == "📊 System Info":
     if not health:
         st.error("API is offline. Please start the FastAPI server.")
     else:
-        # System metrics
         st.subheader("⚙️ System Status")
         col1, col2, col3 = st.columns(3)
         col1.metric("Status", health["status"].upper())
@@ -251,7 +257,6 @@ elif page == "📊 System Info":
 
         st.divider()
 
-        # Model info
         st.subheader("🤖 Model Configuration")
         col1, col2, col3 = st.columns(3)
         col1.metric("LLM", "LLaMA 3.3 70B")
@@ -265,7 +270,6 @@ elif page == "📊 System Info":
 
         st.divider()
 
-        # Documents
         st.subheader("📚 Ingested Documents")
         docs = api_documents()
         if docs and docs["documents"]:
@@ -276,7 +280,6 @@ elif page == "📊 System Info":
 
         st.divider()
 
-        # Evaluation scores
         st.subheader("📈 Evaluation Results (V1)")
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Pass Rate", "100%")
@@ -286,16 +289,14 @@ elif page == "📊 System Info":
 
         st.divider()
 
-        # V2 features
         st.subheader("🚀 V2 Features")
         col1, col2, col3 = st.columns(3)
         col1.success("✅ Phase 1: Query Rewriting")
         col2.success("✅ Phase 2: Reranking")
-        col3.info("🔜 Phase 3: Hybrid Search")
+        col3.success("✅ Phase 3: Hybrid Search")
 
         st.divider()
 
-        # About
         st.subheader("👤 About")
         st.markdown("""
         **NeuroRAG — AI Research Assistant**  

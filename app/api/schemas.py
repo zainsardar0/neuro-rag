@@ -11,7 +11,7 @@ class SourceSchema(BaseModel):
     file: str
     page: int
     score: float                # Cosine similarity score from ChromaDB
-    rerank_score: float         # V2: CrossEncoder reranking score
+    rerank_score: float         # V2 Phase 2: CrossEncoder reranking score
 
 
 class QueryResponse(BaseModel):
@@ -23,6 +23,7 @@ class QueryResponse(BaseModel):
     model: str
     used_fallback: bool
     retry_count: int
+    retrieval_method: str       # V2 Phase 3: Hybrid Search
 
 
 class IngestRequest(BaseModel):
