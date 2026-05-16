@@ -59,3 +59,26 @@ class HealthResponse(BaseModel):
     app_name: str
     environment: str
     total_chunks_in_db: int
+
+
+class RagasEvaluationRequest(BaseModel):
+    """Request schema for the /evaluate/ragas endpoint."""
+    test_cases: list[str] = []  # Empty = use defaults
+
+
+class RagasMetricScore(BaseModel):
+    """Schema for a single RAGAS metric result."""
+    faithfulness: float
+    response_relevancy: float
+    context_precision: float
+    overall_score: float
+
+
+class RagasEvaluationResponse(BaseModel):
+    """Response schema for the /evaluate/ragas endpoint."""
+    total_queries: int
+    faithfulness: float
+    response_relevancy: float
+    context_precision: float
+    overall_score: float
+    per_query_results: list[dict]

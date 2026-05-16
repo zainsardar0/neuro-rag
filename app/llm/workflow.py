@@ -17,6 +17,7 @@ class RAGWorkflow:
     V2 Phase 1: Query Rewriting
     V2 Phase 2: Reranking
     V2 Phase 3: Hybrid Search
+    V2 Phase 4: RAGAS Evaluation support
     """
 
     def __init__(self):
@@ -48,7 +49,7 @@ class RAGWorkflow:
 
         state["retry_count"] = 0
         state["is_valid"] = False
-        state["retrieval_method"] = ""          # V2 Phase 3: initialize
+        state["retrieval_method"] = ""
         return state
 
     def rewrite_query(self, state: RAGState) -> RAGState:
@@ -67,7 +68,6 @@ class RAGWorkflow:
     def retrieve_documents(self, state: RAGState) -> RAGState:
         """
         Node 3: Hybrid retrieval — BM25 + semantic + RRF + reranking.
-        V2 Phase 3: Uses hybrid search instead of semantic only.
         """
         app_logger.info("Retrieving relevant documents (hybrid)...")
 
@@ -80,7 +80,6 @@ class RAGWorkflow:
         state["retrieved_chunks"] = results
         state["needs_fallback"] = needs_fallback
 
-        # V2 Phase 3: capture retrieval method from first chunk
         if results:
             state["retrieval_method"] = results[0].get("retrieval_method", "hybrid")
         else:
@@ -153,8 +152,14 @@ class RAGWorkflow:
     def prepare_final_response(self, state: RAGState) -> RAGState:
         """
         Node 7: Package the final response.
-        V2 Phase 3: Includes retrieval_method in metadata.
+        V2 Phase 4: Include retrieved_chunks_text for RAGAS evaluation.
         """
+        # V2 Phase 4: Extract chunk texts for RAGAS context evaluation
+        retrieved_chunks_text = [
+            {"text": chunk["text"], "page": chunk["page"], "source": chunk["source"]}
+            for chunk in state["retrieved_chunks"]
+        ] if state["retrieved_chunks"] else []
+
         state["final_response"] = {
             "query": state["query"],
             "rewritten_query": state.get("rewritten_query", ""),
@@ -163,7 +168,8 @@ class RAGWorkflow:
             "model": state["model"],
             "used_fallback": state["needs_fallback"],
             "retry_count": state["retry_count"],
-            "retrieval_method": state.get("retrieval_method", "hybrid")  # V2 Phase 3
+            "retrieval_method": state.get("retrieval_method", "hybrid"),
+            "retrieved_chunks_text": retrieved_chunks_text,  # V2 Phase 4: for RAGAS
         }
         app_logger.info("Final response prepared")
         return state
@@ -204,7 +210,6 @@ class RAGWorkflow:
 
         graph = StateGraph(RAGState)
 
-        # Add nodes
         graph.add_node("analyze", self.analyze_query)
         graph.add_node("rewrite", self.rewrite_query)
         graph.add_node("retrieve", self.retrieve_documents)
@@ -213,10 +218,8 @@ class RAGWorkflow:
         graph.add_node("fallback", self.fallback_response)
         graph.add_node("finalize", self.prepare_final_response)
 
-        # Set entry point
         graph.set_entry_point("analyze")
 
-        # Edges
         graph.add_conditional_edges(
             "analyze",
             self.route_after_analysis,
@@ -264,7 +267,7 @@ class RAGWorkflow:
             "rewritten_query": "",
             "retrieved_chunks": [],
             "needs_fallback": False,
-            "retrieval_method": "",             # V2 Phase 3
+            "retrieval_method": "",
             "answer": "",
             "sources": [],
             "model": "",

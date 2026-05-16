@@ -3,7 +3,8 @@ from app.api.schemas import (
     QueryRequest, QueryResponse,
     IngestRequest, IngestResponse,
     UploadResponse, DocumentsResponse,
-    HealthResponse
+    HealthResponse,
+    RagasEvaluationRequest, RagasEvaluationResponse  # V2 Phase 4
 )
 from app.llm.workflow import RAGWorkflow
 from app.retrieval.vector_store import VectorStore
@@ -81,14 +82,12 @@ async def upload_document(file: UploadFile = File(...)):
     Upload a PDF file and ingest it into ChromaDB.
     Handles duplicates — replaces existing if already ingested.
     """
-    # Validate file type
     if not file.filename.endswith(".pdf"):
         raise HTTPException(
             status_code=400,
             detail="Only PDF files are supported"
         )
 
-    # Validate file size (max 10MB)
     contents = await file.read()
     if len(contents) > 10 * 1024 * 1024:
         raise HTTPException(
@@ -96,7 +95,6 @@ async def upload_document(file: UploadFile = File(...)):
             detail="File too large. Maximum size is 10MB"
         )
 
-    # Save file to data/raw/
     save_path = os.path.join("data", "raw", file.filename)
     try:
         with open(save_path, "wb") as f:
@@ -108,7 +106,6 @@ async def upload_document(file: UploadFile = File(...)):
             detail=f"Failed to save file: {str(e)}"
         )
 
-    # Ingest the file
     result = ingest_single_file(save_path)
     total = vector_store.count()
 
@@ -138,4 +135,31 @@ def list_documents():
         raise HTTPException(
             status_code=500,
             detail=f"Failed to list documents: {str(e)}"
+        )
+
+
+@router.post("/evaluate/ragas", response_model=RagasEvaluationResponse)
+def evaluate_ragas(request: RagasEvaluationRequest):
+    """
+    V2 Phase 4: Run RAGAS evaluation on the RAG pipeline.
+    Uses Faithfulness, ResponseRelevancy, LLMContextPrecisionWithoutReference.
+    Returns per-metric scores and overall RAGAS score.
+    """
+    app_logger.info("RAGAS evaluation requested...")
+
+    try:
+        # Lazy import to avoid loading RAGAS on every server startup
+        from app.evaluation.ragas_evaluator import RagasEvaluator
+
+        evaluator = RagasEvaluator()
+        test_cases = request.test_cases if request.test_cases else None
+        results = evaluator.evaluate(test_cases=test_cases)
+
+        return RagasEvaluationResponse(**results)
+
+    except Exception as e:
+        app_logger.error(f"RAGAS evaluation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"RAGAS evaluation failed: {str(e)}"
         )

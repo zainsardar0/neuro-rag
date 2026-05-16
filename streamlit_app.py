@@ -52,6 +52,20 @@ def api_documents():
         return None
 
 
+def api_evaluate_ragas(test_cases: list = None):
+    """V2 Phase 4: Call RAGAS evaluation endpoint."""
+    try:
+        payload = {"test_cases": test_cases if test_cases else []}
+        r = requests.post(
+            f"{API_BASE}/evaluate/ragas",
+            json=payload,
+            timeout=300        # RAGAS takes time — 5 min timeout
+        )
+        return r.json() if r.status_code == 200 else None
+    except Exception as e:
+        return None
+
+
 # ─── Sidebar ───────────────────────────────────────────────
 
 with st.sidebar:
@@ -73,7 +87,7 @@ with st.sidebar:
     st.divider()
     page = st.radio(
         "Navigation",
-        ["🔍 Query", "📄 Upload Documents", "📊 System Info"]
+        ["🔍 Query", "📄 Upload Documents", "📊 System Info", "🧪 RAGAS Evaluation"]
     )
 
 # ─── Page 1: Query ─────────────────────────────────────────
@@ -290,18 +304,130 @@ elif page == "📊 System Info":
         st.divider()
 
         st.subheader("🚀 V2 Features")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         col1.success("✅ Phase 1: Query Rewriting")
         col2.success("✅ Phase 2: Reranking")
         col3.success("✅ Phase 3: Hybrid Search")
+        col4.success("✅ Phase 4: RAGAS Evaluation")
 
         st.divider()
 
         st.subheader("👤 About")
         st.markdown("""
-        **NeuroRAG — AI Research Assistant**  
+        **NeuroRAG — AI Research Assistant**
         Built by **Muhammad Zain Ul Abideen**
 
         [![GitHub](https://img.shields.io/badge/GitHub-zainsardar0-black?logo=github)](https://github.com/zainsardar0)
         [![LinkedIn](https://img.shields.io/badge/LinkedIn-Muhammad%20Zain-blue?logo=linkedin)](https://www.linkedin.com/in/muhammad-zain-ul-abideen-1705032b3/)
         """)
+
+# ─── Page 4: RAGAS Evaluation ──────────────────────────────
+
+elif page == "🧪 RAGAS Evaluation":
+    st.title("🧪 RAGAS Evaluation Dashboard")
+    st.caption("Industry-standard RAG evaluation using Faithfulness, Response Relevancy, and Context Precision.")
+
+    if not health:
+        st.error("API is offline. Please start the FastAPI server.")
+    else:
+        # Metric explanations
+        with st.expander("ℹ️ What do these metrics mean?", expanded=False):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown("**🎯 Faithfulness**")
+                st.markdown("Is the answer grounded in the retrieved context? Detects hallucinations. Score 0-1.")
+            with col2:
+                st.markdown("**💬 Response Relevancy**")
+                st.markdown("Does the answer actually address the question asked? Score 0-1.")
+            with col3:
+                st.markdown("**🔍 Context Precision**")
+                st.markdown("Are the retrieved chunks relevant to the question? Score 0-1.")
+
+        st.divider()
+
+        # Custom test cases
+        st.subheader("📝 Test Cases")
+        st.caption("Leave empty to use default BERT paper test cases, or add your own.")
+
+        custom_queries = st.text_area(
+            "Custom queries (one per line)",
+            placeholder="What is BERT?\nHow does MLM work?\nWhat is fine-tuning?",
+            height=120
+        )
+
+        test_cases = []
+        if custom_queries.strip():
+            test_cases = [q.strip() for q in custom_queries.strip().split("\n") if q.strip()]
+            st.info(f"Using {len(test_cases)} custom test cases.")
+        else:
+            st.info("Using 5 default BERT paper test cases.")
+
+        st.divider()
+
+        # Run evaluation
+        if st.button("🚀 Run RAGAS Evaluation", type="primary"):
+            docs = api_documents()
+            if not docs or not docs["documents"]:
+                st.error("No documents ingested. Please upload documents first.")
+            else:
+                with st.spinner("🧪 Running RAGAS evaluation... This may take 2-5 minutes."):
+                    results = api_evaluate_ragas(test_cases if test_cases else None)
+
+                if results:
+                    st.success("✅ Evaluation complete!")
+                    st.divider()
+
+                    # Overall score
+                    overall = results.get("overall_score", 0)
+                    st.subheader("📊 Overall RAGAS Score")
+
+                    score_color = "green" if overall >= 0.7 else "orange" if overall >= 0.5 else "red"
+                    st.markdown(
+                        f"<h1 style='text-align:center; color:{score_color}'>{overall:.2%}</h1>",
+                        unsafe_allow_html=True
+                    )
+
+                    st.divider()
+
+                    # Per-metric scores
+                    st.subheader("📈 Metric Scores")
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric(
+                        "🎯 Faithfulness",
+                        f"{results.get('faithfulness', 0):.2%}",
+                        help="Higher = less hallucination"
+                    )
+                    col2.metric(
+                        "💬 Response Relevancy",
+                        f"{results.get('response_relevancy', 0):.2%}",
+                        help="Higher = more relevant answers"
+                    )
+                    col3.metric(
+                        "🔍 Context Precision",
+                        f"{results.get('context_precision', 0):.2%}",
+                        help="Higher = better retrieval"
+                    )
+
+                    st.divider()
+
+                    # Per-query results
+                    st.subheader("🔬 Per-Query Results")
+                    per_query = results.get("per_query_results", [])
+                    if per_query:
+                        for i, row in enumerate(per_query, 1):
+                            with st.expander(f"Query {i}: {row.get('user_input', '')[:60]}..."):
+                                q_col1, q_col2, q_col3 = st.columns(3)
+                                q_col1.metric(
+                                    "Faithfulness",
+                                    f"{row.get('faithfulness', 0):.2%}"
+                                )
+                                q_col2.metric(
+                                    "Relevancy",
+                                    f"{row.get('response_relevancy', 0):.2%}"
+                                )
+                                q_col3.metric(
+                                    "Precision",
+                                    f"{row.get('llm_context_precision_without_reference', 0):.2%}"
+                                )
+                else:
+                    st.error("RAGAS evaluation failed. Check FastAPI terminal for details.")
