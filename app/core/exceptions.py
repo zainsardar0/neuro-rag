@@ -39,3 +39,8 @@ class LLMError(NeuroRAGException):
 class ConfigurationError(NeuroRAGException):
     """Raised when configuration is invalid or missing."""
     pass
+
+
+class CacheError(NeuroRAGException):
+    """Raised when Redis cache operations fail."""  # V2 Phase 5
+    pass

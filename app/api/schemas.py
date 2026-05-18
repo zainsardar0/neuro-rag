@@ -24,6 +24,7 @@ class QueryResponse(BaseModel):
     used_fallback: bool
     retry_count: int
     retrieval_method: str       # V2 Phase 3: Hybrid Search
+    cache_hit: bool = False     # V2 Phase 5: Redis Caching
 
 
 class IngestRequest(BaseModel):
@@ -59,11 +60,21 @@ class HealthResponse(BaseModel):
     app_name: str
     environment: str
     total_chunks_in_db: int
+    cache_enabled: bool = False     # V2 Phase 5
+    cache_connected: bool = False   # V2 Phase 5
+
+
+class CacheStatsResponse(BaseModel):
+    """Response schema for the /cache/stats endpoint."""
+    enabled: bool
+    connected: bool
+    cached_queries: int = 0
+    ttl_seconds: int = 0
 
 
 class RagasEvaluationRequest(BaseModel):
     """Request schema for the /evaluate/ragas endpoint."""
-    test_cases: list[str] = []  # Empty = use defaults
+    test_cases: list[str] = []
 
 
 class RagasMetricScore(BaseModel):

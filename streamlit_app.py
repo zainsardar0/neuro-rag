@@ -52,6 +52,24 @@ def api_documents():
         return None
 
 
+def api_cache_stats():
+    """V2 Phase 5: Get Redis cache statistics."""
+    try:
+        r = requests.get(f"{API_BASE}/cache/stats", timeout=5)
+        return r.json() if r.status_code == 200 else None
+    except:
+        return None
+
+
+def api_flush_cache():
+    """V2 Phase 5: Flush all cached queries."""
+    try:
+        r = requests.delete(f"{API_BASE}/cache/flush", timeout=10)
+        return r.json() if r.status_code == 200 else None
+    except:
+        return None
+
+
 def api_evaluate_ragas(test_cases: list = None):
     """V2 Phase 4: Call RAGAS evaluation endpoint."""
     try:
@@ -59,7 +77,7 @@ def api_evaluate_ragas(test_cases: list = None):
         r = requests.post(
             f"{API_BASE}/evaluate/ragas",
             json=payload,
-            timeout=300        # RAGAS takes time — 5 min timeout
+            timeout=300
         )
         return r.json() if r.status_code == 200 else None
     except Exception as e:
@@ -80,6 +98,15 @@ with st.sidebar:
         st.metric("Chunks in DB", health.get("total_chunks_in_db", 0))
         st.caption(f"Model: llama-3.3-70b-versatile")
         st.caption(f"Env: {health.get('environment', 'N/A')}")
+
+        # V2 Phase 5: Cache status in sidebar
+        if health.get("cache_enabled"):
+            if health.get("cache_connected"):
+                st.success("⚡ Cache Connected")
+            else:
+                st.warning("⚡ Cache Disconnected")
+        else:
+            st.info("⚡ Cache Disabled")
     else:
         st.error("🔴 API Offline")
         st.warning("Start FastAPI server:\nuvicorn app.main:app --reload --port 8000")
@@ -128,6 +155,12 @@ if page == "🔍 Query":
 
             if result:
                 st.divider()
+
+                # V2 Phase 5: Cache hit badge
+                if result.get("cache_hit"):
+                    st.success("⚡ Served from cache — instant response!")
+                else:
+                    st.info("🔄 Fresh response — result cached for next time")
 
                 # V2 Phase 1: Query Rewriting
                 rewritten = result.get("rewritten_query", "").strip()
@@ -284,6 +317,26 @@ elif page == "📊 System Info":
 
         st.divider()
 
+        # V2 Phase 5: Cache stats section
+        st.subheader("⚡ Redis Cache (V2 Phase 5)")
+        cache_stats = api_cache_stats()
+        if cache_stats:
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Cache Enabled", "Yes" if cache_stats.get("enabled") else "No")
+            col2.metric("Connected", "Yes" if cache_stats.get("connected") else "No")
+            col3.metric("Cached Queries", cache_stats.get("cached_queries", 0))
+            col4.metric("TTL", f"{cache_stats.get('ttl_seconds', 0)}s")
+
+            if st.button("🗑️ Flush Cache"):
+                result = api_flush_cache()
+                if result:
+                    st.success(f"✅ {result.get('message')} ({result.get('deleted', 0)} entries deleted)")
+                    st.rerun()
+        else:
+            st.warning("Cache stats unavailable")
+
+        st.divider()
+
         st.subheader("📚 Ingested Documents")
         docs = api_documents()
         if docs and docs["documents"]:
@@ -304,11 +357,12 @@ elif page == "📊 System Info":
         st.divider()
 
         st.subheader("🚀 V2 Features")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         col1.success("✅ Phase 1: Query Rewriting")
         col2.success("✅ Phase 2: Reranking")
         col3.success("✅ Phase 3: Hybrid Search")
         col4.success("✅ Phase 4: RAGAS Evaluation")
+        col5.success("✅ Phase 5: Redis Caching")
 
         st.divider()
 
@@ -330,7 +384,6 @@ elif page == "🧪 RAGAS Evaluation":
     if not health:
         st.error("API is offline. Please start the FastAPI server.")
     else:
-        # Metric explanations
         with st.expander("ℹ️ What do these metrics mean?", expanded=False):
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -345,13 +398,12 @@ elif page == "🧪 RAGAS Evaluation":
 
         st.divider()
 
-        # Custom test cases
         st.subheader("📝 Test Cases")
-        st.caption("Leave empty to use default BERT paper test cases, or add your own.")
+        st.caption("Leave empty to use default GPT-2 paper test cases, or add your own.")
 
         custom_queries = st.text_area(
             "Custom queries (one per line)",
-            placeholder="What is BERT?\nHow does MLM work?\nWhat is fine-tuning?",
+            placeholder="What is GPT-2?\nHow does zero-shot learning work?\nWhat dataset was used?",
             height=120
         )
 
@@ -360,11 +412,10 @@ elif page == "🧪 RAGAS Evaluation":
             test_cases = [q.strip() for q in custom_queries.strip().split("\n") if q.strip()]
             st.info(f"Using {len(test_cases)} custom test cases.")
         else:
-            st.info("Using 5 default BERT paper test cases.")
+            st.info("Using 5 default GPT-2 paper test cases.")
 
         st.divider()
 
-        # Run evaluation
         if st.button("🚀 Run RAGAS Evaluation", type="primary"):
             docs = api_documents()
             if not docs or not docs["documents"]:
@@ -377,7 +428,6 @@ elif page == "🧪 RAGAS Evaluation":
                     st.success("✅ Evaluation complete!")
                     st.divider()
 
-                    # Overall score
                     overall = results.get("overall_score", 0)
                     st.subheader("📊 Overall RAGAS Score")
 
@@ -389,7 +439,6 @@ elif page == "🧪 RAGAS Evaluation":
 
                     st.divider()
 
-                    # Per-metric scores
                     st.subheader("📈 Metric Scores")
                     col1, col2, col3 = st.columns(3)
                     col1.metric(
@@ -410,7 +459,6 @@ elif page == "🧪 RAGAS Evaluation":
 
                     st.divider()
 
-                    # Per-query results
                     st.subheader("🔬 Per-Query Results")
                     per_query = results.get("per_query_results", [])
                     if per_query:
